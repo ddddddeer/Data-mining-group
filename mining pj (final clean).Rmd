@@ -9,7 +9,7 @@ Library
 library(pacman)
 p_load(readxl,e1071,dplyr,stringr, tidyverse, psych, caret, MLmetrics, skimr,
        car, BiocManager, funModeling, caTools, fmsb, pROC, randomForest,
-       forecast, caret, fpp2, tidyverse, zoo, readxl, seastests, rpart, rpart.plot, neuralnet, pROC,
+       forecast, caret, fpp2, tidyverse, zoo, readxl, seastests, rpart, rpart.plot, neuralnet, pROC, magrittr,
        lubridate, qdapTools, qdapDictionaries, randomForest, ranger, doParallel)
 ```
 
@@ -24,6 +24,13 @@ head(dat)
 Missing data
 ```{r}
 sum(is.na(dat))
+```
+
+
+Remove duplicates
+```{r}
+dat <- dat[!duplicated(dat$password), ]
+nrow(dat)
 ```
 
 
@@ -65,6 +72,23 @@ head(dat[dat$isDict == 1,])
 ```
 
 
+Add rockyou
+```{r}
+common_pass <- readLines("xato-net-10-million-passwords.txt") %>%
+  as.list() %>%
+  set_names(., .)
+```
+
+
+
+```{r}
+dat$isCommon <- as.factor(ifelse(dat$password %in% common_pass, 1, 0))
+dat %>%
+  group_by(isCommon) %>%
+  summarise(n())
+```
+
+
 Split data:
 ```{r}
 set.seed(7)
@@ -79,17 +103,7 @@ dat %>%
 ```
 
 
-Library
-```{r}
-library(pacman)
-p_load(readxl,e1071,dplyr,stringr, tidyverse, psych, caret, MLmetrics, skimr,
-       car, BiocManager, funModeling, caTools, fmsb, pROC, randomForest,
-       forecast, caret, fpp2, tidyverse, zoo, readxl, seastests, rpart, rpart.plot, neuralnet, pROC,
-       lubridate, qdapTools, qdapDictionaries, randomForest, ranger, doParallel)
-```
-
-
 Write new csv
 ```{r}
-#write.csv(dat, "clean_password_1124_7pm.csv")
+write.csv(dat, "clean_password_1129.csv")
 ```
