@@ -1,0 +1,95 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+Library
+```{r}
+library(pacman)
+p_load(readxl,e1071,dplyr,stringr, tidyverse, psych, caret, MLmetrics, skimr,
+       car, BiocManager, funModeling, caTools, fmsb, pROC, randomForest,
+       forecast, caret, fpp2, tidyverse, zoo, readxl, seastests, rpart, rpart.plot, neuralnet, pROC,
+       lubridate, qdapTools, qdapDictionaries, randomForest, ranger, doParallel)
+```
+
+
+Load data
+```{r}
+dat <- read.csv('dataset.csv')
+head(dat)
+```
+
+
+Missing data
+```{r}
+sum(is.na(dat))
+```
+
+
+Dtype
+```{r}
+lapply(dat, class)
+```
+
+
+Strength distribution
+```{r}
+hist(dat$strength)
+```
+
+
+Strong Password
+```{r}
+dat %>%
+  group_by(strength >= 0.9) %>%
+  summarise(count = n())
+```
+
+
+Add columns
+```{r}
+dat$numNumber <- str_count(dat$password, "[0-9]")
+dat$numAlphabet <- str_count(str_to_lower(dat$password), "[a-z]")
+dat$numSpecial <- str_count(dat$password, "[^A-Za-z0-9]")
+dat$numCapital <- str_count(dat$password, "[A-Z]")
+dat$numUnique <- sapply(strsplit(dat$password, ""), function(x) length(unique(x)))
+head(dat)
+```
+
+
+Is in dictionary
+```{r}
+dat$isDict <- ifelse(str_to_lower(dat$password) %in% GradyAugmented, 1, 0)
+head(dat[dat$isDict == 1,])
+```
+
+
+Split data:
+```{r}
+set.seed(7)
+train.index <- sample(row.names(dat), 0.7*dim(dat)[1]) 
+valid.index <- setdiff(row.names(dat), train.index) 
+dat[train.index, "train_set"] <- 1
+dat[valid.index, "train_set"] <- 0
+
+dat %>%
+  group_by(train_set) %>%
+  summarise(n())
+```
+
+
+Library
+```{r}
+library(pacman)
+p_load(readxl,e1071,dplyr,stringr, tidyverse, psych, caret, MLmetrics, skimr,
+       car, BiocManager, funModeling, caTools, fmsb, pROC, randomForest,
+       forecast, caret, fpp2, tidyverse, zoo, readxl, seastests, rpart, rpart.plot, neuralnet, pROC,
+       lubridate, qdapTools, qdapDictionaries, randomForest, ranger, doParallel)
+```
+
+
+Write new csv
+```{r}
+#write.csv(dat, "clean_password_1124_7pm.csv")
+```
