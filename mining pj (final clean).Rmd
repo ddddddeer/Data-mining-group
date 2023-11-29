@@ -40,6 +40,14 @@ lapply(dat, class)
 ```
 
 
+Change the spelling of "weak" in our dataset
+```{r}
+dat[dat$class_strength == "Week", "class_strength"] <- "Weak"
+dat[dat$class_strength == "Very week", "class_strength"] <- "Very weak"
+unique(dat$class_strength)
+```
+
+
 Strength distribution
 ```{r}
 hist(dat$strength)
@@ -72,9 +80,12 @@ head(dat[dat$isDict == 1,])
 ```
 
 
-Add rockyou
+Add isCommon, which is appearance count in rockyou and xatonet
 ```{r}
 common_pass <- readLines("xato-net-10-million-passwords.txt") %>%
+  as.list() %>%
+  set_names(., .)
+rockyou <- readLines("rockyou.txt") %>%
   as.list() %>%
   set_names(., .)
 ```
@@ -82,7 +93,8 @@ common_pass <- readLines("xato-net-10-million-passwords.txt") %>%
 
 
 ```{r}
-dat$isCommon <- as.factor(ifelse(dat$password %in% common_pass, 1, 0))
+dat$isCommon <- as.factor(ifelse(dat$password %in% common_pass, 1, 0) + 
+                          ifelse(dat$password %in% rockyou, 1, 0))
 dat %>%
   group_by(isCommon) %>%
   summarise(n())
