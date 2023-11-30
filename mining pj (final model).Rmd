@@ -1,0 +1,367 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+Library
+```{r}
+rm(list=ls(all=TRUE))
+library(pacman)
+p_load(readxl,e1071,dplyr,stringr, tidyverse, psych, caret, MLmetrics, skimr,
+       car, BiocManager, funModeling, caTools, fmsb, pROC, randomForest,
+       forecast, caret, fpp2, tidyverse, zoo, readxl, seastests, rpart, rpart.plot, neuralnet, pROC, nnet,
+       lubridate, qdapTools, qdapDictionaries, randomForest, ranger, doParallel)
+```
+
+
+Load clean data
+```{r}
+dat_raw <- read.csv('clean_password_1129.csv')
+dat_raw$class_strength <- as.factor(make.names(dat_raw$class_strength))
+dat_raw$crack_time <- as.factor(gsub("[^A-Za-z]", "", dat_raw$crack_time))
+
+dat_reg <- dat_raw %>% select(-X, -password, -class_strength)
+dat <- dat_raw %>% select(-X, -password, -strength)
+head(dat$class_strength)
+```
+
+
+Check data set
+```{r}
+dat %>%
+  group_by(class_strength) %>%
+  summarise(count = n())
+```
+
+
+Split
+```{r}
+train <- dat[dat$train_set == 1,] %>% select(-train_set)
+train_reg <- dat_reg[dat_reg$train_set == 1,] %>% select(-train_set)
+val <- dat[dat$train_set == 0,] %>% select(-train_set)
+val_reg <- dat_reg[dat_reg$train_set == 0,] %>% select(-train_set)
+
+norm.values <- preProcess(train, method= c("scale", "center"))
+train_norm <- predict(norm.values, train)
+val_norm <- predict(norm.values, val)
+
+cat(nrow(train), " ", nrow(val))
+```
+
+
+Check train set
+```{r}
+sum(is.na(train))
+levels(train$class_strength)
+train %>%
+  group_by(class_strength) %>%
+  summarise(count = n())
+```
+
+
+Check test set
+```{r}
+val %>%
+  group_by(class_strength) %>%
+  summarise(count = n())
+```
+
+
+Random forest
+```{r}
+set.seed(7)
+rf <- randomForest(class_strength ~ ., data = train, 
+                   mtry = 3, sampsize = 17500, nodesize = 1,
+                   importance = TRUE)
+summary(rf)
+```
+
+
+Variable importance
+```{r}
+rfVarImp <- varImp(rf)
+rfVarImp
+```
+
+
+Prediction
+```{r}
+rf_pred <- predict(rf, val)
+res <- data.frame(rf_pred, val$class_strength)
+confusionMatrix(rf_pred, val$class_strength)
+```
+
+
+Check result
+```{r}
+res %>%
+  filter(val.class_strength == "Strong") %>%
+  head(5)
+```
+```{r}
+res %>%
+  filter(val.class_strength != rf_pred) %>%
+  head(20)
+```
+
+
+Decision tree
+```{r}
+tr <- rpart(class_strength ~., data=train)
+prp(tr)
+```
+
+
+Pruned tree
+```{r}
+tr2 <- prune(tr, cp = tr$cptable[which.min(tr$cptable[,'xerror']), 'CP'])
+prp(tr2)
+```
+
+
+Confusion matrix for decision tree
+```{r}
+tr_prob <- predict(tr,val)
+tr_pred <- as.factor(colnames(tr_prob)[apply(tr_prob,1,which.max)])
+confusionMatrix(tr_pred, as.factor(val$class_strength))
+```
+
+
+Setup random forest regression
+```{r}
+grid <- expand.grid(mtry = seq(13, 18, by=1), 
+                    splitrule = c("variance", "extratrees"), 
+                    min.node.size = c(1,2))
+
+set.seed(0)
+rfrSeeds_df <- c()
+for (row in seq(1, 3)) {
+  rfrSeeds <- vector(mode = "list", length = 5) # length = (total number of folds) + 1
+  for(i in 1:length(rfrSeeds)) rfrSeeds[[i]]<- sample.int(n=100, 24) 
+  # 24 is the total number of tuning grids: 6 x 2 x 2
+  rfrSeeds[[length(rfrSeeds)]] <- 0 
+  rfrSeeds_df <- rbind(rfrSeeds_df, rfrSeeds)
+}
+remove(i, row)
+```
+
+
+Train random forest regression
+```{r}
+rfr_res <- data.frame(matrix(ncol = 5, nrow = 0))
+min_rmse <- Inf; row <- 1
+colnames(rfr_res) <- c('depth', 'mtry', 'splitrule', 'min.node.size', 'rmse')
+
+cl <- makeCluster(detectCores(), type='PSOCK')
+registerDoParallel(cl)
+
+for (depth in seq(30, 30, 5)) {
+  control <- trainControl(method="repeatedcv", number = 4, repeats = 1, seeds = rfrSeeds_df[row+2,])
+  rfrFit_temp <- caret::train(strength ~ .,
+                 data=train_reg, method="ranger", trControl=control,
+                 tuneGrid = grid, max.depth = depth, num.trees = 30, importance = "permutation",
+                 preProcess = c("center", "scale"), metric = "RMSE")
+
+  rfr_res[nrow(rfr_res) + 1,] <- c(depth, rfrFit_temp$finalModel$tuneValue$mtry,
+                                 as.character(rfrFit_temp$finalModel$tuneValue$splitrule),
+                                 rfrFit_temp$finalModel$tuneValue$min.node.size,
+                                 rfrFit_temp$results[[which.min(rfrFit_temp$results[, "RMSE"]),'RMSE']])
+
+  if (rfr_res[nrow(rfr_res),]$rmse < min_rmse) {
+    min_rmse <- rfr_res[nrow(rfr_res),]$rmse
+    rfrFit <- rfrFit_temp
+  }
+  row <- row + 1
+}
+
+stopCluster(cl)
+remove(depth, rfrFit_temp, row)
+# More compact result presentation: getTrainPerf(rfFit)
+best_rfr_res <- rfr_res[which.min(rfr_res$rmse), ]
+print(best_rfr_res)
+remove(rfrFit)
+```
+
+
+```{r}
+grid <- expand.grid(mtry = 18, 
+                    splitrule = "variance", 
+                    min.node.size = 1)
+control <- trainControl(method="none")
+
+rfr_fin <- caret::train(strength ~ ., data=train_reg, method="ranger", 
+                 trControl=control, importance = "permutation",
+                 tuneGrid = grid, max.depth = 30, num.trees = 30, 
+                 preProcess = c("center", "scale"), metric = "RMSE")
+
+summary(rfr_fin)
+```
+
+Get prediction
+```{r}
+rfr_prob <- predict(rfr_fin, val)
+```
+
+
+Accuracy
+```{r}
+val_classstrength <- as.factor(val$class_strength)
+rfr_pred <- as.factor(case_when(
+  rfr_prob >= 0.8 ~ "Very.strong",
+  rfr_prob >= 0.6 ~ "Strong",
+  rfr_prob >= 0.4 ~ "Average",
+  rfr_prob >= 0.2 ~ "Weak",
+  TRUE ~ "Very.weak"
+))
+rfr_res_df <- data.frame(rfr_pred, val_classstrength)
+confusionMatrix(rfr_pred, val_classstrength)
+```
+
+Check test set
+```{r}
+rfr_res_df %>%
+  filter(val_classstrength == "Strong") %>%
+  head(5)
+```
+```{r}
+rfr_res_df %>%
+  filter(val_classstrength != rfr_pred) %>%
+  head(20)
+```
+
+
+Variable Importance
+```{r}
+rfr_varimp <- varImp(rfr_fin)
+rfr_varimp
+```
+
+
+Logistic Regression
+```{r}
+set.seed(7)
+lg <- multinom(class_strength ~ ., data = train_norm)
+summary(lg)
+```
+
+Extract p-value
+```{r}
+pValue_extract <- function(x){
+  z <- summary(x)$coefficients/summary(x)$standard.errors
+  # 2-tailed Wald z tests to test significance of coefficients
+  p <- (1 - pnorm(abs(z), 0, 1)) * 2
+  p
+}
+pValue_extract(lg)
+```
+
+Predict from logistic regression
+```{r}
+lg_pred <- as.factor(predict(lg, newdata = val_norm, "class"))
+```
+
+
+Accuracy logistic regression
+```{r}
+val_classstrength <- as.factor(val_classstrength)
+confusionMatrix(lg_pred, val_classstrength)
+```
+
+
+Instead of using an external package, we also attempt to train multiclass logistic model from the method taught in class. We will use neutralnet package. 
+But first, we need to convert factor variables to suitable format for neural net.
+The function class.ind() is provided by neuralnet package itself
+```{r}
+train_m <- cbind(train_norm[, -c(2,5)], 
+                 class.ind(as.factor(train_norm$class_strength)),
+                 class.ind(as.factor(train_norm$crack_time)))
+val_m <- cbind(val_norm[, -c(2,5)],
+               class.ind(as.factor(val_norm$class_strength)),
+               class.ind(as.factor(val_norm$crack_time)))
+
+colnames(train_m)
+```
+
+
+Training the multiclass logistic regression.
+For an equivalent logistic regression, we need to set:
+- hidden = 0
+- error function is cross-entropy loss (ce)
+- activation function is logistic
+- linear output = FALSE
+Besides, we need to choose our threshold:
+- Low threshold: more accurate model, but resource intensive
+- High threshold: less accurate model, but faster runtime
+- lifesign = full: keep track of the change in our error, to choose the best threshold for our resource
+We choose the threshold our computer can afford.
+```{r}
+lg2 <- neuralnet(Very.strong + Strong + Average + Weak + Very.weak
+                   ~ length + entropy + crack_time_sec + numNumber +
+                   numAlphabet + numSpecial + numCapital + numUnique +
+                   isDict + centuries + days + Eternity + hours +
+                   instant + minutes + months + seconds + years,
+                 data = train_m, linear.output	= F, 
+                 lifesign = "full", #threshold = 0.1, 
+                 hidden = 0, err.fct = 'ce', act.fct = 'logistic')
+plot(lg2)
+```
+
+
+Accuracy logistic regression
+```{r}
+lg_prob2 <- predict(lg2,val_m)
+colnames(lg_prob2) <- c("Very.strong", "Strong", "Average", "Weak", "Very.weak")
+lg_pred2 <- as.factor(colnames(lg_prob2)[apply(lg_prob2,1,which.max)])
+val_classstrength <- as.factor(val_classstrength)
+confusionMatrix(lg_pred2, val_classstrength)
+```
+
+
+KNN
+```{r}
+kn_pred <- class::knn(train=train_norm[,-c(2,5)],
+                      test=val_norm[,-c(2,5)],
+                      cl=train_norm[,2], k=10, prob=TRUE)
+confusionMatrix(kn_pred, val_classstrength)
+```
+
+
+Ensemble
+```{r}
+all_preds <- data.frame(cbind(
+  lg = lg_pred,
+  rf = rf_pred,
+  rfr = rfr_pred,
+  tr = tr_pred,
+  knn = kn_pred
+))
+head(all_preds)
+```
+
+
+
+```{r}
+all_preds$Average <- rowSums(all_preds[,1:5] == 1)
+all_preds$Strong <- rowSums(all_preds[,1:5] == 2)
+all_preds$Very.strong <- rowSums(all_preds[,1:5] == 3)
+all_preds$Very.weak <- rowSums(all_preds[,1:5] == 4)
+all_preds$Weak <- rowSums(all_preds[,1:5] == 5)
+head(all_preds)
+```
+
+
+```{r}
+all_preds$majority <- as.factor(colnames(all_preds[,6:10])
+                                [apply(all_preds[,6:10],1,which.max)])
+head(all_preds)
+```
+
+```{r}
+unique(all_preds$majority)
+```
+
+```{r}
+confusionMatrix(all_preds$majority, val_classstrength)
+```
+
