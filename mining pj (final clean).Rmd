@@ -1,10 +1,15 @@
 ---
-title: "R Notebook"
+title: "Data Cleaning"
 output: html_notebook
 ---
 
+Before we start, it's noteworthy that this project is multiclass classification.
+First, we choose this approach to improve our interpretability. 
+Interpretability is a very valuable aspect of data analytics. Insights become more valuable when it is understood by larger audience.
+Besides, it's also about challenge and experience. It's a pretty interesting and rare experience to work with multiclass classification, which is much rarer than 2-class classification. We can a lot about adapting our codes to multiclass problems, especially for multiclass logistic regression.
 
-Library
+
+Load library
 ```{r}
 library(pacman)
 p_load(readxl,e1071,dplyr,stringr, tidyverse, psych, caret, MLmetrics, skimr,
@@ -21,7 +26,7 @@ head(dat)
 ```
 
 
-Missing data
+Check missing data
 ```{r}
 sum(is.na(dat))
 ```
@@ -34,13 +39,13 @@ nrow(dat)
 ```
 
 
-Dtype
+Check data types
 ```{r}
 lapply(dat, class)
 ```
 
 
-Change the spelling of "weak" in our dataset
+Fix the misspelling of "weak" in our dataset
 ```{r}
 dat[dat$class_strength == "Week", "class_strength"] <- "Weak"
 dat[dat$class_strength == "Very week", "class_strength"] <- "Very weak"
@@ -48,21 +53,20 @@ unique(dat$class_strength)
 ```
 
 
-Strength distribution
+Check strength distribution
 ```{r}
 hist(dat$strength)
 ```
 
 
-Strong Password
-```{r}
-dat %>%
-  group_by(strength >= 0.9) %>%
-  summarise(count = n())
-```
-
-
-Add columns
+Add new variables
+Creating new variables is an important step in our analysis
+We create several new variables to support our models, including:
+- numNumber: count of numeric characters in each password string
+- numAlphabet: count of alphabet characters in each password string
+- numSpecial: count of special characters in each password string
+- numSpecial: count of capital characters in each password string
+- numUnique:count of unique character types in each password string
 ```{r}
 dat$numNumber <- str_count(dat$password, "[0-9]")
 dat$numAlphabet <- str_count(str_to_lower(dat$password), "[a-z]")
@@ -73,14 +77,16 @@ head(dat)
 ```
 
 
-Is in dictionary
+Create isDict variable: whether the password string is a word in dictionary
 ```{r}
 dat$isDict <- ifelse(str_to_lower(dat$password) %in% GradyAugmented, 1, 0)
 head(dat[dat$isDict == 1,])
 ```
 
 
-Add isCommon, which is appearance count in rockyou and xatonet
+Create new variable isCommon, which is the number of times the password string appears in rockyou and xatonet.
+These are 2 external datasets we downloaded to support our main dataset. Both include the most common passwords in the respective network.
+First, we load the datasets in R.
 ```{r}
 common_pass <- readLines("xato-net-10-million-passwords.txt") %>%
   as.list() %>%
@@ -91,7 +97,7 @@ rockyou <- readLines("rockyou.txt") %>%
 ```
 
 
-
+Next, count the appearance in the external datasets.
 ```{r}
 dat$isCommon <- as.factor(ifelse(dat$password %in% common_pass, 1, 0) + 
                           ifelse(dat$password %in% rockyou, 1, 0))
@@ -101,7 +107,9 @@ dat %>%
 ```
 
 
-Split data:
+Split data into training and validation.
+We use training_set variable to denote training set (training_set = 1) and validation set (training_set = 0).
+This can ensure we have the same train/validation split even if we split the dataset on different operating systems or computers.
 ```{r}
 set.seed(7)
 train.index <- sample(row.names(dat), 0.7*dim(dat)[1]) 
@@ -115,7 +123,7 @@ dat %>%
 ```
 
 
-Write new csv
+Export new csv
 ```{r}
 write.csv(dat, "clean_password_1129.csv")
 ```

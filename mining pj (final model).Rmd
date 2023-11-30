@@ -1,10 +1,10 @@
 ---
-title: "R Notebook"
+title: "Predictive Models"
 output: html_notebook
 ---
 
 
-Library
+Load library
 ```{r}
 rm(list=ls(all=TRUE))
 library(pacman)
@@ -15,7 +15,7 @@ p_load(readxl,e1071,dplyr,stringr, tidyverse, psych, caret, MLmetrics, skimr,
 ```
 
 
-Load clean data
+Load clean dataset:
 ```{r}
 dat_raw <- read.csv('clean_password_1129.csv')
 dat_raw$class_strength <- as.factor(make.names(dat_raw$class_strength))
@@ -27,7 +27,7 @@ head(dat$class_strength)
 ```
 
 
-Check data set
+Check data distribution:
 ```{r}
 dat %>%
   group_by(class_strength) %>%
@@ -35,7 +35,7 @@ dat %>%
 ```
 
 
-Split
+Split the dataset into training set and validation set, based on training_set variable
 ```{r}
 train <- dat[dat$train_set == 1,] %>% select(-train_set)
 train_reg <- dat_reg[dat_reg$train_set == 1,] %>% select(-train_set)
@@ -50,7 +50,7 @@ cat(nrow(train), " ", nrow(val))
 ```
 
 
-Check train set
+Check training set
 ```{r}
 sum(is.na(train))
 levels(train$class_strength)
@@ -68,24 +68,27 @@ val %>%
 ```
 
 
-Random forest
+Running random forest model
+- mtry: the number of variables each tree can look at. 
+- nodesize: minimum terminal node size
+We choose one that maximizes predictive performance on validation set.
 ```{r}
 set.seed(7)
 rf <- randomForest(class_strength ~ ., data = train, 
-                   mtry = 3, sampsize = 17500, nodesize = 1,
+                   mtry = 3, nodesize = 1,
                    importance = TRUE)
 summary(rf)
 ```
 
 
-Variable importance
+Variable importance ranking from random forest
 ```{r}
 rfVarImp <- varImp(rf)
 rfVarImp
 ```
 
 
-Prediction
+Prediction and confusion matrix from random forest
 ```{r}
 rf_pred <- predict(rf, val)
 res <- data.frame(rf_pred, val$class_strength)
@@ -93,7 +96,7 @@ confusionMatrix(rf_pred, val$class_strength)
 ```
 
 
-Check result
+Sanity check result of random forest
 ```{r}
 res %>%
   filter(val.class_strength == "Strong") %>%
@@ -106,21 +109,21 @@ res %>%
 ```
 
 
-Decision tree
+Training decision tree
 ```{r}
 tr <- rpart(class_strength ~., data=train)
 prp(tr)
 ```
 
 
-Pruned tree
+Pruned tree: We attempt to prune the tree, but our unpruned tree already achieves the best CV performance.
 ```{r}
 tr2 <- prune(tr, cp = tr$cptable[which.min(tr$cptable[,'xerror']), 'CP'])
 prp(tr2)
 ```
 
 
-Confusion matrix for decision tree
+Prediction and confusion matrix for decision tree
 ```{r}
 tr_prob <- predict(tr,val)
 tr_pred <- as.factor(colnames(tr_prob)[apply(tr_prob,1,which.max)])
@@ -128,7 +131,9 @@ confusionMatrix(tr_pred, as.factor(val$class_strength))
 ```
 
 
-Setup random forest regression
+Setup random forest regression cross-validation hyperparameter tuning:
+We attempt to use cross-validation to optimize our model. Because models such as random forest or XGBoost depends a lot on the choice of hyperparameter, using cross-validation to improve this process can really help.
+We decide to use CV hyperparameter tuning on random forest regression (as opposed to random forest classification), because it's more accurate to tune hyperparameters on RMSE metric, given that our dataset is multi-class and cant use sensitivity metric well.
 ```{r}
 grid <- expand.grid(mtry = seq(13, 18, by=1), 
                     splitrule = c("variance", "extratrees"), 
@@ -147,12 +152,19 @@ remove(i, row)
 ```
 
 
-Train random forest regression
+Tune random forest regression. We tune 4 important hyperparameters:
+- mtry: the number of variables each tree can look at
+- split rule: how data is split in each node
+- min node size
+- depth: max tree depth
+Because depth isn't included in caret package for hyperparameter tuning, we also have a manual loop to tune this hyperparameter.
+We use 4 folds for our cross-validation.
 ```{r}
 rfr_res <- data.frame(matrix(ncol = 5, nrow = 0))
 min_rmse <- Inf; row <- 1
 colnames(rfr_res) <- c('depth', 'mtry', 'splitrule', 'min.node.size', 'rmse')
 
+# Parallel processing
 cl <- makeCluster(detectCores(), type='PSOCK')
 registerDoParallel(cl)
 
@@ -175,8 +187,10 @@ for (depth in seq(30, 30, 5)) {
   row <- row + 1
 }
 
+# Turn off parallel processing
 stopCluster(cl)
 remove(depth, rfrFit_temp, row)
+
 # More compact result presentation: getTrainPerf(rfFit)
 best_rfr_res <- rfr_res[which.min(rfr_res$rmse), ]
 print(best_rfr_res)
@@ -184,6 +198,7 @@ remove(rfrFit)
 ```
 
 
+Training random forest regression on the full training data (without cross-validation)
 ```{r}
 grid <- expand.grid(mtry = 18, 
                     splitrule = "variance", 
@@ -198,13 +213,13 @@ rfr_fin <- caret::train(strength ~ ., data=train_reg, method="ranger",
 summary(rfr_fin)
 ```
 
-Get prediction
+Get predictions from random forest regression
 ```{r}
 rfr_prob <- predict(rfr_fin, val)
 ```
 
 
-Accuracy
+Confusion matrix from random forest regression
 ```{r}
 val_classstrength <- as.factor(val$class_strength)
 rfr_pred <- as.factor(case_when(
@@ -218,7 +233,8 @@ rfr_res_df <- data.frame(rfr_pred, val_classstrength)
 confusionMatrix(rfr_pred, val_classstrength)
 ```
 
-Check test set
+
+Sanity check predictions of random forest regression
 ```{r}
 rfr_res_df %>%
   filter(val_classstrength == "Strong") %>%
@@ -231,21 +247,21 @@ rfr_res_df %>%
 ```
 
 
-Variable Importance
+Variable importance from random forest regression
 ```{r}
 rfr_varimp <- varImp(rfr_fin)
 rfr_varimp
 ```
 
 
-Logistic Regression
+Training our logistic regression
 ```{r}
 set.seed(7)
 lg <- multinom(class_strength ~ ., data = train_norm)
 summary(lg)
 ```
 
-Extract p-value
+Extract p-value of logistic regression
 ```{r}
 pValue_extract <- function(x){
   z <- summary(x)$coefficients/summary(x)$standard.errors
@@ -256,20 +272,20 @@ pValue_extract <- function(x){
 pValue_extract(lg)
 ```
 
-Predict from logistic regression
+Make predictions from logistic regression
 ```{r}
 lg_pred <- as.factor(predict(lg, newdata = val_norm, "class"))
 ```
 
 
-Accuracy logistic regression
+Confusion matrix from logistic regression
 ```{r}
 val_classstrength <- as.factor(val_classstrength)
 confusionMatrix(lg_pred, val_classstrength)
 ```
 
 
-Instead of using an external package, we also attempt to train multiclass logistic model from the method taught in class. We will use neutralnet package. 
+Instead of using an external package, we also attempt to train multiclass logistic model from the package taught in class, which neutralnet package. 
 But first, we need to convert factor variables to suitable format for neural net.
 The function class.ind() is provided by neuralnet package itself
 ```{r}
@@ -295,6 +311,7 @@ Besides, we need to choose our threshold:
 - High threshold: less accurate model, but faster runtime
 - lifesign = full: keep track of the change in our error, to choose the best threshold for our resource
 We choose the threshold our computer can afford.
+Although we might not get as good model as the package, it's an insightful practice.
 ```{r}
 lg2 <- neuralnet(Very.strong + Strong + Average + Weak + Very.weak
                    ~ length + entropy + crack_time_sec + numNumber +
@@ -302,13 +319,13 @@ lg2 <- neuralnet(Very.strong + Strong + Average + Weak + Very.weak
                    isDict + centuries + days + Eternity + hours +
                    instant + minutes + months + seconds + years,
                  data = train_m, linear.output	= F, 
-                 lifesign = "full", #threshold = 0.1, 
+                 lifesign = "full", #threshold = 0.3, 
                  hidden = 0, err.fct = 'ce', act.fct = 'logistic')
 plot(lg2)
 ```
 
 
-Accuracy logistic regression
+Confusion matrix from self-built logistic regression
 ```{r}
 lg_prob2 <- predict(lg2,val_m)
 colnames(lg_prob2) <- c("Very.strong", "Strong", "Average", "Weak", "Very.weak")
@@ -318,7 +335,7 @@ confusionMatrix(lg_pred2, val_classstrength)
 ```
 
 
-KNN
+Train KNN model, and get confusion matrix
 ```{r}
 kn_pred <- class::knn(train=train_norm[,-c(2,5)],
                       test=val_norm[,-c(2,5)],
@@ -327,7 +344,9 @@ confusionMatrix(kn_pred, val_classstrength)
 ```
 
 
-Ensemble
+Ensemble model
+We also want to try this method taught in class and tutorial exercise.
+We combine the results of all models, and take their majority vote.
 ```{r}
 all_preds <- data.frame(cbind(
   lg = lg_pred,
@@ -340,7 +359,7 @@ head(all_preds)
 ```
 
 
-
+Count the votes of each class:
 ```{r}
 all_preds$Average <- rowSums(all_preds[,1:5] == 1)
 all_preds$Strong <- rowSums(all_preds[,1:5] == 2)
@@ -351,16 +370,21 @@ head(all_preds)
 ```
 
 
+Get the majority-voted label for each password:
 ```{r}
 all_preds$majority <- as.factor(colnames(all_preds[,6:10])
                                 [apply(all_preds[,6:10],1,which.max)])
 head(all_preds)
 ```
 
+
+Sanity check majority vote
 ```{r}
 unique(all_preds$majority)
 ```
 
+
+Confusion matrix from ensemble method
 ```{r}
 confusionMatrix(all_preds$majority, val_classstrength)
 ```
