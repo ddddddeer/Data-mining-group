@@ -3,18 +3,14 @@ title: "Data Cleaning"
 output: html_notebook
 ---
 
-Before we start, it's noteworthy that this project is multiclass classification.
-First, we choose this approach to improve our interpretability. 
-Interpretability is a very valuable aspect of data analytics. Insights become more valuable when it is understood by larger audience.
-Besides, it's also about challenge and experience. It's a pretty interesting and rare experience to work with multiclass classification, which is much rarer than 2-class classification. We can a lot about adapting our codes to multiclass problems, especially for multiclass logistic regression.
-
 
 Load library
 ```{r}
+rm(list=ls(all=TRUE))
 library(pacman)
-p_load(readxl,e1071,dplyr,stringr, tidyverse, psych, caret, MLmetrics, skimr,
-       car, BiocManager, funModeling, caTools, fmsb, pROC, randomForest,
-       forecast, caret, fpp2, tidyverse, zoo, readxl, seastests, rpart, rpart.plot, neuralnet, pROC, magrittr,
+p_load(readxl, e1071 ,dplyr,stringr, tidyverse, psych, caret, MLmetrics, skimr,
+       car, BiocManager, caTools, fmsb, pROC, randomForest,
+       caret, fpp2, tidyverse, zoo, rpart, rpart.plot, neuralnet, pROC, nnet,
        lubridate, qdapTools, qdapDictionaries, randomForest, ranger, doParallel)
 ```
 

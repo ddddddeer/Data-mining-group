@@ -4,13 +4,18 @@ output: html_notebook
 ---
 
 
+This project is multiclass classification.
+First, we choose this approach to improve our interpretability. From the user's perspective, they only want to know if their password is strong/weak, and unlikely to want to know strength score.
+Besides, it's also about challenge and experience. It's a pretty interesting and rare experience to work with multiclass classification, which is much rarer than 2-class classification. We can a lot about adapting our codes to multiclass problems, especially for multiclass logistic regression.
+
+
 Load library
 ```{r}
 rm(list=ls(all=TRUE))
 library(pacman)
-p_load(readxl,e1071,dplyr,stringr, tidyverse, psych, caret, MLmetrics, skimr,
-       car, BiocManager, funModeling, caTools, fmsb, pROC, randomForest,
-       forecast, caret, fpp2, tidyverse, zoo, readxl, seastests, rpart, rpart.plot, neuralnet, pROC, nnet,
+p_load(readxl, e1071 ,dplyr,stringr, tidyverse, psych, caret, MLmetrics, skimr,
+       car, BiocManager, caTools, fmsb, pROC, randomForest,
+       caret, fpp2, tidyverse, zoo, rpart, rpart.plot, neuralnet, pROC, nnet,
        lubridate, qdapTools, qdapDictionaries, randomForest, ranger, doParallel)
 ```
 
@@ -261,16 +266,17 @@ lg <- multinom(class_strength ~ ., data = train_norm)
 summary(lg)
 ```
 
+
 Extract p-value of logistic regression
 ```{r}
 pValue_extract <- function(x){
   z <- summary(x)$coefficients/summary(x)$standard.errors
-  # 2-tailed Wald z tests to test significance of coefficients
   p <- (1 - pnorm(abs(z), 0, 1)) * 2
   p
 }
 pValue_extract(lg)
 ```
+
 
 Make predictions from logistic regression
 ```{r}
@@ -319,7 +325,7 @@ lg2 <- neuralnet(Very.strong + Strong + Average + Weak + Very.weak
                    isDict + centuries + days + Eternity + hours +
                    instant + minutes + months + seconds + years,
                  data = train_m, linear.output	= F, 
-                 lifesign = "full", #threshold = 0.3, 
+                 lifesign = "full", threshold = 0.3, 
                  hidden = 0, err.fct = 'ce', act.fct = 'logistic')
 plot(lg2)
 ```
