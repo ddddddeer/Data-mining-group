@@ -347,6 +347,17 @@ kn_pred <- class::knn(train=train_norm[,-c(2,5)],
                       test=val_norm[,-c(2,5)],
                       cl=train_norm[,2], k=10, prob=TRUE)
 confusionMatrix(kn_pred, val_classstrength)
+
+#run k-means with known of 5. 
+km_result<-stats::kmeans(passwd_train_df[,-c(1,4, 14)], centers = 5)
+passwd_train_df$cluster <- km_result$cluster
+
+#return the references of the data points for the different clusters and analyse them.
+which(passwd_train_df$cluster==1)
+which(passwd_train_df$cluster==2)
+which(passwd_train_df$cluster==3)
+head(which(passwd_train_df$cluster==5))
+which(passwd_train_df$cluster==4)
 ```
 
 
